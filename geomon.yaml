@@ -1,0 +1,27 @@
+substitutions:
+  name: geomon
+  friendly_name: Geomon
+  # RS485 / Modbus RTU bus settings. These must match the bus being sniffed.
+  rs485_rx_pin: GPIO21
+  rs485_tx_pin: GPIO17
+  modbus_baud: "9600"
+  modbus_parity: NONE    # NONE, EVEN or ODD
+  modbus_stop_bits: "1"
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+  min_version: 2026.9.0
+  project:
+    name: jfcliche.geomon
+    version: "0.1.0"
+
+external_components:
+  - source:
+      type: local
+      path: components
+
+packages:
+  board: !include common/board_esp32s3_poe_eth.yaml
+  base: !include common/base.yaml
+  sniffer: !include common/modbus_sniffer.yaml

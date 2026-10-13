@@ -1,0 +1,45 @@
+# Passive Modbus RTU sniffer on the RS485 port. The firmware never transmits.
+
+uart:
+  - id: rs485
+    rx_pin: ${rs485_rx_pin}
+    tx_pin: ${rs485_tx_pin}
+    baud_rate: ${modbus_baud}
+    parity: ${modbus_parity}
+    stop_bits: ${modbus_stop_bits}
+    data_bits: 8
+    # Large enough to absorb ~150 ms of continuous traffic at 115200 baud.
+    rx_buffer_size: 2048
+
+modbus_sniffer:
+  id: sniffer
+  uart_id: rs485
+  # Log every decoded frame as hex at DEBUG level. Useful while mapping registers.
+  log_frames: true
+  update_interval: 30s
+  frames:
+    name: Modbus Frames
+  discarded_bytes:
+    name: Modbus Discarded Bytes
+  unmatched_responses:
+    name: Modbus Unmatched Responses
+  exceptions:
+    name: Modbus Exceptions
+
+# Registers observed on the bus are published here. Add one entry per value.
+# Example (uncomment and adapt once the register map is known):
+#
+# sensor:
+#   - platform: modbus_sniffer
+#     name: Supply Temperature
+#     slave: 1
+#     register_type: holding   # holding (FC 03/06/16/23) or input (FC 04)
+#     address: 0x0010
+#     value_type: S16          # U16, S16, U32, S32, U32_R, S32_R, FLOAT32, FLOAT32_R
+#     unit_of_measurement: "°C"
+#     device_class: temperature
+#     accuracy_decimals: 1
+#     filters:
+#       - multiply: 0.1
+#       # The master may poll several times per second; limit updates sent to HA.
+#       - throttle: 10s

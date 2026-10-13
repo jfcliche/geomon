@@ -1,0 +1,56 @@
+# Build test: the geomon packages plus one register sensor per value type,
+# so every code path of the sniffer component gets compiled.
+# Run with:  make test
+
+substitutions:
+  name: geomon-test
+  friendly_name: Geomon Test
+  rs485_rx_pin: GPIO21
+  rs485_tx_pin: GPIO17
+  modbus_baud: "115200"
+  modbus_parity: NONE
+  modbus_stop_bits: "1"
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+
+external_components:
+  - source:
+      type: local
+      path: ../components
+
+packages:
+  board: !include ../common/board_esp32s3_poe_eth.yaml
+  base: !include ../common/base.yaml
+  sniffer: !include ../common/modbus_sniffer.yaml
+
+sensor:
+  - platform: modbus_sniffer
+    name: Test U16
+    slave: 1
+    address: 0
+  - platform: modbus_sniffer
+    name: Test S16
+    slave: 1
+    address: 1
+    value_type: S16
+    filters:
+      - multiply: 0.1
+  - platform: modbus_sniffer
+    name: Test U32
+    slave: 1
+    register_type: input
+    address: 2
+    value_type: U32
+  - platform: modbus_sniffer
+    name: Test S32_R
+    slave: 2
+    address: 4
+    value_type: S32_R
+  - platform: modbus_sniffer
+    name: Test Float
+    slave: 2
+    register_type: input
+    address: 6
+    value_type: FLOAT32

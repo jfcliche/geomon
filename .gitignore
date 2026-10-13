@@ -1,0 +1,16 @@
+# ESPHome build output and local secrets
+.esphome/
+secrets.yaml
+!tests/secrets.yaml
+# ESPHome regenerates this next to any config it compiles
+tests/.gitignore
+
+# Python / uv
+.venv/
+__pycache__/
+*.pyc
+
+# Editors
+.vscode/
+.idea/
+*.swp
