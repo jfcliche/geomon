@@ -1,5 +1,7 @@
 # geomon
 
+[Documentation](https://jfcliche.github.io/geomon/)
+
 ESPHome firmware for a **Waveshare ESP32-S3-POE-ETH** that listens to a Modbus
 RTU bus on RS485 and publishes the values to Home Assistant over wired Ethernet
 (W5500, optionally powered by PoE). Wi-Fi is not used.
