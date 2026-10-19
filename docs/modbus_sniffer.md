@@ -48,7 +48,7 @@ counted, but their values are not published.
 modbus_sniffer:
   id: sniffer
   uart_id: rs485
-  log_frames: true          # hex dump of each frame at DEBUG level
+  log_frames: true          # hex dump of each idle burst, plus decoded frames
   idle_timeout: 50ms
   update_interval: 30s      # how often the counters below are published
   frames:                   # all optional
@@ -90,7 +90,13 @@ Value types:
 A 32-bit value is published only when both of its registers appear in the
 same frame.
 
-A sensor only updates when the master actually reads or writes that register.
+A sensor without `active: true` updates only when the other master reads or
+writes that register. `active: true` makes geomon read it itself. Those reads
+start `active_delay` (5 s) after the other master has gone silent, and they
+stop after `active_window` (30 s), which leaves the bus free before a master
+that polls once a minute. Adjacent active registers on the same slave are one
+request. A reply from the other master aborts the rest of the window.
+
 If the master polls quickly, add a `throttle` filter so Home Assistant isn't
 flooded.
 

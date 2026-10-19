@@ -58,7 +58,8 @@ make synceth HOST=11.0.3.12     # or the IP address directly
 - **No frames, many discarded bytes**: wrong baud rate or parity, or A/B
   swapped.
 - **No frames, no discarded bytes**: nothing is being received. Check the RX
-  wiring (GPIO21) and that the transceiver is powered.
+  wiring (GPIO17) and that the transceiver is powered. DE is GPIO16 and must
+  not be left floating.
 - **Many unmatched responses**: the sniffer started mid-conversation (this is
   normal for a moment) or two masters share the bus.
 - **Ethernet does not come up**: check the cable and the link LEDs, then

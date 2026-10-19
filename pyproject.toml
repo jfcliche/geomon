@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12,<3.15"
 dependencies = [
     "esphome>=2026.9.1",
+    "ipython>=9.17.1",
 ]
 
 [tool.uv]

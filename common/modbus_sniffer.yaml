@@ -1,4 +1,6 @@
-# Passive Modbus RTU sniffer on the RS485 port. The firmware never transmits.
+# Modbus RTU sniffer. Sensors without `active` are listen-only. Sensors with
+# `active: true` are read after the other master has been quiet for active_delay,
+# and that burst stops within active_window so the master has the bus back.
 
 uart:
   - id: rs485
@@ -14,7 +16,13 @@ uart:
 modbus_sniffer:
   id: sniffer
   uart_id: rs485
-  # Log every decoded frame as hex at DEBUG level. Useful while mapping registers.
+  # 0 means no DE pin: the UART stays in normal mode and never enables the driver.
+  flow_control_pin: ${rs485_txen_pin}
+  # The heat pump master sweeps about once a minute. Wait until it has been
+  # silent for 5 s, then read for at most 30 s.
+  active_delay: 5s
+  active_window: 30s
+  # Log every idle-delimited burst as hex, then any frame whose CRC checks out.
   log_frames: true
   update_interval: 30s
   frames:
@@ -26,20 +34,533 @@ modbus_sniffer:
   exceptions:
     name: Modbus Exceptions
 
-# Registers observed on the bus are published here. Add one entry per value.
-# Example (uncomment and adapt once the register map is known):
-#
-# sensor:
-#   - platform: modbus_sniffer
-#     name: Supply Temperature
-#     slave: 1
-#     register_type: holding   # holding (FC 03/06/16/23) or input (FC 04)
-#     address: 0x0010
-#     value_type: S16          # U16, S16, U32, S32, U32_R, S32_R, FLOAT32, FLOAT32_R
-#     unit_of_measurement: "°C"
-#     device_class: temperature
-#     accuracy_decimals: 1
-#     filters:
-#       - multiply: 0.1
-#       # The master may poll several times per second; limit updates sent to HA.
-#       - throttle: 10s
+# Slave 1 is the Allengra flow meter (FM1). Slave 3 is the electrical meter (PM2).
+# Both are read with function 0x04 (input registers). Scales are in docs/heat_pump_cop.md.
+sensor:
+  - platform: modbus_sniffer
+    id: fm1_flow
+    name: FM1 Flow
+    slave: 1
+    register_type: input
+    address: 0
+    value_type: S32
+    unit_of_measurement: L/h
+    device_class: volume_flow_rate
+    accuracy_decimals: 1
+    state_class: measurement
+    filters:
+      - multiply: 0.1
+  - platform: modbus_sniffer
+    id: fm1_tint
+    name: FM1 Body Temperature
+    slave: 1
+    register_type: input
+    address: 2
+    value_type: S16
+    unit_of_measurement: "°C"
+    device_class: temperature
+    accuracy_decimals: 2
+    state_class: measurement
+    filters:
+      - multiply: 0.01
+  - platform: modbus_sniffer
+    id: fm1_trem
+    name: FM1 Remote Temperature
+    slave: 1
+    register_type: input
+    address: 3
+    value_type: S16
+    unit_of_measurement: "°C"
+    device_class: temperature
+    accuracy_decimals: 2
+    state_class: measurement
+    filters:
+      - multiply: 0.01
+  - platform: modbus_sniffer
+    id: fm1_tdif
+    name: FM1 Temperature Difference
+    slave: 1
+    register_type: input
+    address: 4
+    value_type: S16
+    unit_of_measurement: "°C"
+    device_class: temperature
+    accuracy_decimals: 2
+    state_class: measurement
+    filters:
+      - multiply: 0.01
+  - platform: modbus_sniffer
+    id: fm1_pres
+    name: FM1 Pressure
+    slave: 1
+    register_type: input
+    address: 5
+    value_type: S16
+    unit_of_measurement: bar
+    device_class: pressure
+    accuracy_decimals: 3
+    state_class: measurement
+    filters:
+      - multiply: 0.001
+  - platform: modbus_sniffer
+    id: fm1_powr
+    name: FM1 POWR
+    slave: 1
+    register_type: input
+    address: 6
+    value_type: S32
+    unit_of_measurement: kW
+    device_class: power
+    accuracy_decimals: 2
+    state_class: measurement
+    filters:
+      - multiply: 0.01
+  - platform: modbus_sniffer
+    id: fm1_abud
+    name: FM1 Air Detected
+    slave: 1
+    register_type: input
+    address: 10
+    value_type: U16
+    accuracy_decimals: 0
+    state_class: measurement
+  - platform: modbus_sniffer
+    id: fm1_abus
+    name: FM1 Air Amount
+    slave: 1
+    register_type: input
+    address: 11
+    value_type: U16
+    accuracy_decimals: 0
+    state_class: measurement
+  - platform: modbus_sniffer
+    id: fm1_glyc
+    name: FM1 Glycol
+    slave: 1
+    register_type: input
+    address: 12
+    value_type: S16
+    unit_of_measurement: "%"
+    accuracy_decimals: 2
+    state_class: measurement
+    filters:
+      - multiply: 0.01
+  - platform: modbus_sniffer
+    id: fm1_frpt
+    name: FM1 Freeze Point
+    slave: 1
+    register_type: input
+    address: 14
+    value_type: S16
+    unit_of_measurement: "°C"
+    device_class: temperature
+    accuracy_decimals: 2
+    state_class: measurement
+    filters:
+      - multiply: 0.01
+  - platform: modbus_sniffer
+    id: fm1_bubb
+    name: FM1 Bubble Amount
+    slave: 1
+    register_type: input
+    address: 15
+    value_type: S16
+    unit_of_measurement: "%"
+    accuracy_decimals: 2
+    state_class: measurement
+    active: true
+    filters:
+      - multiply: 0.01
+  - platform: modbus_sniffer
+    id: fm1_tsos
+    name: FM1 Sound Speed Temperature
+    slave: 1
+    register_type: input
+    address: 17
+    value_type: S16
+    unit_of_measurement: "°C"
+    device_class: temperature
+    accuracy_decimals: 2
+    state_class: measurement
+    active: true
+    filters:
+      - multiply: 0.01
+  - platform: modbus_sniffer
+    id: fm1_twvo
+    name: FM1 Volume Total
+    slave: 1
+    register_type: input
+    address: 500
+    value_type: U32
+    unit_of_measurement: L
+    device_class: volume
+    accuracy_decimals: 0
+    state_class: total_increasing
+  - platform: modbus_sniffer
+    id: fm1_poti
+    name: FM1 Powered Time
+    slave: 1
+    register_type: input
+    address: 502
+    value_type: U32
+    unit_of_measurement: s
+    device_class: duration
+    accuracy_decimals: 0
+    state_class: total_increasing
+  - platform: modbus_sniffer
+    id: fm1_potf
+    name: FM1 Flowing Time
+    slave: 1
+    register_type: input
+    address: 504
+    value_type: U32
+    unit_of_measurement: s
+    device_class: duration
+    accuracy_decimals: 0
+    state_class: total_increasing
+  - platform: modbus_sniffer
+    id: fm1_tene
+    name: FM1 Heating Energy
+    slave: 1
+    register_type: input
+    address: 506
+    value_type: U32
+    unit_of_measurement: kWh
+    device_class: energy
+    accuracy_decimals: 2
+    state_class: total_increasing
+    filters:
+      - multiply: 0.01
+  # The heat pump master does not poll these. Allengra v1.31, input registers.
+  # Calibration tables (1540 and above) are not published. Reserved registers
+  # and the unimplemented warning at address 9 are not published either.
+  - platform: modbus_sniffer
+    id: fm1_fver
+    name: FM1 Firmware Version
+    slave: 1
+    register_type: input
+    address: 277
+    value_type: S32
+    accuracy_decimals: 0
+    entity_category: diagnostic
+    active: true
+  - platform: modbus_sniffer
+    id: fm1_tenc
+    name: FM1 Cooling Energy
+    slave: 1
+    register_type: input
+    address: 508
+    value_type: U32
+    unit_of_measurement: kWh
+    device_class: energy
+    accuracy_decimals: 2
+    state_class: total_increasing
+    active: true
+    filters:
+      - multiply: 0.01
+  # Addresses 1000-1008 are the same quantities in the unit selected by the
+  # holding registers below. The integer registers 0-14 stay in fixed units.
+  - platform: modbus_sniffer
+    id: fm1_flow_alt
+    name: FM1 Flow Alt
+    slave: 1
+    register_type: input
+    address: 1000
+    value_type: FLOAT32
+    accuracy_decimals: 3
+    state_class: measurement
+    active: true
+  - platform: modbus_sniffer
+    id: fm1_tint_alt
+    name: FM1 Body Temperature Alt
+    slave: 1
+    register_type: input
+    address: 1002
+    value_type: FLOAT32
+    accuracy_decimals: 2
+    state_class: measurement
+    active: true
+  - platform: modbus_sniffer
+    id: fm1_trem_alt
+    name: FM1 Remote Temperature Alt
+    slave: 1
+    register_type: input
+    address: 1004
+    value_type: FLOAT32
+    accuracy_decimals: 2
+    state_class: measurement
+    active: true
+  - platform: modbus_sniffer
+    id: fm1_tdif_alt
+    name: FM1 Temperature Difference Alt
+    slave: 1
+    register_type: input
+    address: 1006
+    value_type: FLOAT32
+    accuracy_decimals: 2
+    state_class: measurement
+    active: true
+  - platform: modbus_sniffer
+    id: fm1_pres_alt
+    name: FM1 Pressure Alt
+    slave: 1
+    register_type: input
+    address: 1008
+    value_type: FLOAT32
+    accuracy_decimals: 3
+    state_class: measurement
+    active: true
+  # Configuration is holding registers, read with function 0x03. Raw codes are
+  # published as documented; nothing is written.
+  - platform: modbus_sniffer
+    id: fm1_mbid
+    name: FM1 Device ID
+    slave: 1
+    register_type: holding
+    address: 320
+    value_type: U16
+    accuracy_decimals: 0
+    entity_category: diagnostic
+    active: true
+  - platform: modbus_sniffer
+    id: fm1_brat
+    name: FM1 Baud
+    slave: 1
+    register_type: holding
+    address: 321
+    value_type: U32
+    unit_of_measurement: bps
+    accuracy_decimals: 0
+    entity_category: diagnostic
+    active: true
+  - platform: modbus_sniffer
+    id: fm1_pari
+    name: FM1 Parity
+    slave: 1
+    register_type: holding
+    address: 324
+    value_type: U16
+    accuracy_decimals: 0
+    entity_category: diagnostic
+    active: true
+  - platform: modbus_sniffer
+    id: fm1_sbit
+    name: FM1 Stop Bits
+    slave: 1
+    register_type: holding
+    address: 325
+    value_type: U16
+    accuracy_decimals: 0
+    entity_category: diagnostic
+    active: true
+  - platform: modbus_sniffer
+    id: fm1_gldc
+    name: FM1 Glycol Config
+    slave: 1
+    register_type: holding
+    address: 327
+    value_type: U16
+    accuracy_decimals: 0
+    entity_category: diagnostic
+    active: true
+  - platform: modbus_sniffer
+    id: fm1_enmc
+    name: FM1 Energy Config
+    slave: 1
+    register_type: holding
+    address: 328
+    value_type: U16
+    accuracy_decimals: 0
+    entity_category: diagnostic
+    active: true
+  - platform: modbus_sniffer
+    id: fm1_flow_unit
+    name: FM1 Flow Unit
+    slave: 1
+    register_type: holding
+    address: 329
+    value_type: U16
+    accuracy_decimals: 0
+    entity_category: diagnostic
+    active: true
+  - platform: modbus_sniffer
+    id: fm1_temp_unit
+    name: FM1 Temperature Unit
+    slave: 1
+    register_type: holding
+    address: 330
+    value_type: U16
+    accuracy_decimals: 0
+    entity_category: diagnostic
+    active: true
+  - platform: modbus_sniffer
+    id: fm1_pres_unit
+    name: FM1 Pressure Unit
+    slave: 1
+    register_type: holding
+    address: 331
+    value_type: U16
+    accuracy_decimals: 0
+    entity_category: diagnostic
+    active: true
+  - platform: modbus_sniffer
+    id: fm1_cal_en
+    name: FM1 Calibration Enable
+    slave: 1
+    register_type: holding
+    address: 338
+    value_type: U16
+    accuracy_decimals: 0
+    entity_category: diagnostic
+    active: true
+  - platform: modbus_sniffer
+    id: pm2_volt
+    name: PM2 Voltage
+    slave: 3
+    register_type: input
+    address: 2
+    value_type: FLOAT32
+    unit_of_measurement: V
+    device_class: voltage
+    accuracy_decimals: 2
+    state_class: measurement
+  - platform: modbus_sniffer
+    id: pm2_freq
+    name: PM2 Frequency
+    slave: 3
+    register_type: input
+    address: 4
+    value_type: FLOAT32
+    unit_of_measurement: Hz
+    device_class: frequency
+    accuracy_decimals: 2
+    state_class: measurement
+  - platform: modbus_sniffer
+    id: pm2_curr
+    name: PM2 Current
+    slave: 3
+    register_type: input
+    address: 6
+    value_type: FLOAT32
+    unit_of_measurement: A
+    device_class: current
+    accuracy_decimals: 3
+    state_class: measurement
+  - platform: modbus_sniffer
+    id: pm2_actp
+    name: PM2 Active Power
+    slave: 3
+    register_type: input
+    address: 8
+    value_type: FLOAT32
+    unit_of_measurement: W
+    device_class: power
+    accuracy_decimals: 0
+    state_class: measurement
+  - platform: modbus_sniffer
+    id: pm2_appp
+    name: PM2 Apparent Power
+    slave: 3
+    register_type: input
+    address: 10
+    value_type: FLOAT32
+    unit_of_measurement: VA
+    device_class: apparent_power
+    accuracy_decimals: 0
+    state_class: measurement
+  - platform: modbus_sniffer
+    id: pm2_reap
+    name: PM2 Reactive Power
+    slave: 3
+    register_type: input
+    address: 12
+    value_type: FLOAT32
+    unit_of_measurement: var
+    device_class: reactive_power
+    accuracy_decimals: 0
+    state_class: measurement
+  - platform: modbus_sniffer
+    id: pm2_pfac
+    name: PM2 Power Factor
+    slave: 3
+    register_type: input
+    address: 14
+    value_type: FLOAT32
+    device_class: power_factor
+    accuracy_decimals: 3
+    state_class: measurement
+  - platform: modbus_sniffer
+    id: pm2_iace
+    name: PM2 Import Active Energy
+    slave: 3
+    register_type: input
+    address: 352
+    value_type: FLOAT32
+    unit_of_measurement: kWh
+    device_class: energy
+    accuracy_decimals: 1
+    state_class: total_increasing
+  - platform: modbus_sniffer
+    id: pm2_iree
+    name: PM2 Import Reactive Energy
+    slave: 3
+    register_type: input
+    address: 354
+    value_type: FLOAT32
+    unit_of_measurement: kvarh
+    device_class: reactive_energy
+    accuracy_decimals: 1
+    state_class: total_increasing
+  - platform: modbus_sniffer
+    id: pm2_eace
+    name: PM2 Export Active Energy
+    slave: 3
+    register_type: input
+    address: 358
+    value_type: FLOAT32
+    unit_of_measurement: kWh
+    device_class: energy
+    accuracy_decimals: 1
+    state_class: total_increasing
+  - platform: modbus_sniffer
+    id: pm2_eree
+    name: PM2 Export Reactive Energy
+    slave: 3
+    register_type: input
+    address: 360
+    value_type: FLOAT32
+    unit_of_measurement: kvarh
+    device_class: reactive_energy
+    accuracy_decimals: 1
+    state_class: total_increasing
+  - platform: modbus_sniffer
+    id: pm2_tace
+    name: PM2 Total Active Energy
+    slave: 3
+    register_type: input
+    address: 362
+    value_type: FLOAT32
+    unit_of_measurement: kWh
+    device_class: energy
+    accuracy_decimals: 1
+    state_class: total_increasing
+  - platform: template
+    name: COP
+    accuracy_decimals: 2
+    state_class: measurement
+    icon: mdi:heat-pump
+    update_interval: 15s
+    lambda: |-
+      if (isnan(id(pm2_curr).state) || id(pm2_curr).state <= 1.0f)
+        return NAN;
+      if (isnan(id(fm1_flow).state) || isnan(id(fm1_tdif).state) || isnan(id(pm2_actp).state))
+        return NAN;
+      const float p_kw = -id(pm2_actp).state / 1000.0f;
+      if (p_kw <= 0.05f)
+        return NAN;
+      const float q_kw = id(fm1_flow).state * id(fm1_tdif).state * 0.001163f * ${ethanol_cf};
+      if (q_kw > 0.0f)
+        return (q_kw + p_kw) / p_kw;
+      if (q_kw < 0.0f)
+        return (-q_kw - p_kw) / p_kw;
+      return NAN;

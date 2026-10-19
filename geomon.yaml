@@ -2,11 +2,17 @@ substitutions:
   name: geomon
   friendly_name: Geomon
   # RS485 / Modbus RTU bus settings. These must match the bus being sniffed.
-  rs485_rx_pin: GPIO21
-  rs485_tx_pin: GPIO17
-  modbus_baud: "9600"
+  rs485_rx_pin: GPIO17
+  rs485_tx_pin: GPIO21
+  # Raised only while a byte is leaving. 0 leaves the driver off.
+  rs485_txen_pin: GPIO16
+  # 19200 8N1 is the rate that decodes the meters. See docs/heat_pump_cop.md.
+  modbus_baud: "19200"
   modbus_parity: NONE    # NONE, EVEN or ODD
   modbus_stop_bits: "1"
+  # Volumetric heat capacity relative to water. 1.0 until the ethanol fraction is known.
+  # GLYC on the flow meter is a glycol model, not this number.
+  ethanol_cf: "1.0"
 
 esphome:
   name: ${name}

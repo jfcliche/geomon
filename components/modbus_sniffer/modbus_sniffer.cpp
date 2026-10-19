@@ -18,6 +18,8 @@ static constexpr size_t MAX_FRAME = 256;
 static constexpr size_t MIN_FRAME = 4;
 static constexpr size_t MAX_REGISTERS = 125;
 static constexpr size_t READ_CHUNK = 128;
+// A slave that is going to answer does so in well under this. Longer means the bus was taken.
+static constexpr uint32_t PROBE_TIMEOUT_MS = 400;
 
 static inline uint16_t be16(const uint8_t *p) { return (uint16_t(p[0]) << 8) | p[1]; }
 
@@ -77,15 +79,26 @@ void RegisterSensor::handle_registers(uint16_t start, const uint16_t *words, uin
 // ---------------------------------------------------------------------------
 // ModbusSniffer
 
-void ModbusSniffer::setup() { this->buffer_.reserve(2 * MAX_FRAME); }
+void ModbusSniffer::setup() {
+  this->buffer_.reserve(2 * MAX_FRAME);
+  this->last_foreign_ms_ = millis();
+  this->build_probes_();
+}
 
 void ModbusSniffer::dump_config() {
   ESP_LOGCONFIG(TAG,
                 "Modbus RTU sniffer:\n"
                 "  Log frames: %s\n"
                 "  Idle timeout: %" PRIu32 " ms\n"
-                "  Register sensors: %u",
-                YESNO(this->log_frames_), this->idle_timeout_ms_, (unsigned) this->sensors_.size());
+                "  Register sensors: %u\n"
+                "  Active reads: %u, %" PRIu32 " ms after the master stops, for %" PRIu32 " ms\n"
+                "  Driver enable: %s",
+                YESNO(this->log_frames_), this->idle_timeout_ms_, (unsigned) this->sensors_.size(),
+                (unsigned) this->probes_.size(), this->active_delay_ms_, this->active_window_ms_,
+                YESNO(this->driver_enable_));
+  if (!this->probes_.empty() && !this->driver_enable_) {
+    ESP_LOGW(TAG, "Active reads need rs485_txen_pin set to the module DE pin");
+  }
   LOG_UPDATE_INTERVAL(this);
   LOG_SENSOR("  ", "Frames", this->frames_sensor_);
   LOG_SENSOR("  ", "Discarded bytes", this->discarded_bytes_sensor_);
@@ -109,8 +122,21 @@ void ModbusSniffer::update() {
     this->exceptions_sensor_->publish_state(this->exceptions_);
 }
 
+void ModbusSniffer::log_sequence_(const uint8_t *data, size_t len) {
+  // 32 bytes per line keeps each log record short enough for the API log link.
+  static constexpr size_t CHUNK = 32;
+  char hex[format_hex_pretty_size(CHUNK)];
+  ESP_LOGI(TAG, "RX %u bytes", (unsigned) len);
+  for (size_t off = 0; off < len; off += CHUNK) {
+    const size_t n = std::min(CHUNK, len - off);
+    format_hex_pretty_to(hex, data + off, n, ' ');
+    ESP_LOGI(TAG, "  %s", hex);
+  }
+}
+
 void ModbusSniffer::loop() {
   const uint32_t now = millis();
+  bool got_bytes = false;
   size_t avail = this->available();
   if (avail > 0) {
     uint8_t chunk[READ_CHUNK];
@@ -120,16 +146,37 @@ void ModbusSniffer::loop() {
         break;
       this->buffer_.insert(this->buffer_.end(), chunk, chunk + n);
       avail -= n;
+      got_bytes = true;
     }
     this->last_byte_ms_ = now;
   }
 
-  // The ESPHome main loop is far too coarse to see the 3.5-character inter-frame gap, so frames are
-  // delimited structurally (function-code length rules plus CRC). The idle timeout only flushes
-  // bytes that can never form a valid frame.
-  const bool idle = (now - this->last_byte_ms_) > this->idle_timeout_ms_;
-  while (!this->buffer_.empty() && this->parse_one_(idle)) {
+  // Bytes that arrive while we are not waiting for our own reply belong to the other master.
+  // A gap inside its sweep is about 200 ms, so 5 s of silence means the sweep is over.
+  if (got_bytes && this->probe_state_ != ProbeState::WAIT) {
+    this->last_foreign_ms_ = now;
+    this->armed_ = true;
+    if (this->window_open_) {
+      this->abort_window_("master resumed");
+    }
   }
+
+  if (!this->buffer_.empty()) {
+    // Hold the burst until the line goes idle, then log it whole. Parsing earlier discards bytes that
+    // fail the CRC one at a time, which is what hid the traffic: the counter rose and nothing was logged.
+    const bool idle = (now - this->last_byte_ms_) > this->idle_timeout_ms_;
+    const bool overflow = this->buffer_.size() >= 2 * MAX_FRAME;
+    if (!idle && !overflow)
+      return;
+
+    if (this->log_frames_)
+      this->log_sequence_(this->buffer_.data(), this->buffer_.size());
+
+    while (!this->buffer_.empty() && this->parse_one_(true)) {
+    }
+  }
+
+  this->poll_active_(millis());
 }
 
 bool ModbusSniffer::crc_ok_(const uint8_t *data, size_t len) {
@@ -280,6 +327,17 @@ void ModbusSniffer::handle_request_(const uint8_t *frame, size_t len) {
   const uint8_t slave = frame[0];
   const uint8_t fc = frame[1];
 
+  // An echoed copy of our own request matches. Anything else while we are waiting is the other master.
+  if (this->probe_state_ == ProbeState::WAIT && this->last_request_.valid && len >= 6) {
+    const uint16_t start = be16(frame + 2);
+    const uint16_t count = be16(frame + 4);
+    if (slave != this->last_request_.slave || fc != this->last_request_.function ||
+        start != this->last_request_.read_start || count != this->last_request_.read_count) {
+      this->collision_ = true;
+      this->keep_foreign_request_ = true;
+    }
+  }
+
   LastRequest &req = this->last_request_;
   req.valid = slave != 0;  // broadcasts get no response
   req.slave = slave;
@@ -326,6 +384,8 @@ void ModbusSniffer::handle_response_(const uint8_t *frame, size_t len) {
 
   if (!req.valid || req.slave != slave || req.function != fc) {
     this->unmatched_responses_++;
+    if (this->probe_state_ == ProbeState::WAIT)
+      this->collision_ = true;
     return;
   }
   req.valid = false;
@@ -352,6 +412,137 @@ void ModbusSniffer::dispatch_(uint8_t slave, RegisterType type, uint16_t start, 
     if (s->get_slave() == slave && s->get_register_type() == type)
       s->handle_registers(start, words, count);
   }
+}
+
+void ModbusSniffer::build_probes_() {
+  std::vector<RegisterSensor *> active;
+  for (auto *s : this->sensors_) {
+    if (s->is_active())
+      active.push_back(s);
+  }
+  std::sort(active.begin(), active.end(), [](const RegisterSensor *a, const RegisterSensor *b) {
+    if (a->get_slave() != b->get_slave())
+      return a->get_slave() < b->get_slave();
+    if (a->get_register_type() != b->get_register_type())
+      return a->get_register_type() < b->get_register_type();
+    return a->get_address() < b->get_address();
+  });
+
+  for (auto *s : active) {
+    const uint8_t fc = s->get_register_type() == RegisterType::INPUT ? 0x04 : 0x03;
+    const uint16_t end = s->get_address() + s->word_count();
+    if (!this->probes_.empty()) {
+      Probe &p = this->probes_.back();
+      const uint16_t span_end = p.start + p.count;
+      // One unused register between two sensors (a reserved hole) still fits in one read.
+      if (p.slave == s->get_slave() && p.function == fc && s->get_address() <= span_end + 1) {
+        const uint16_t new_end = std::max(span_end, end);
+        if (new_end - p.start <= MAX_REGISTERS) {
+          p.count = new_end - p.start;
+          continue;
+        }
+      }
+    }
+    this->probes_.push_back(Probe{s->get_slave(), fc, s->get_address(), s->word_count()});
+  }
+}
+
+void ModbusSniffer::poll_active_(uint32_t now) {
+  if (this->probes_.empty())
+    return;
+
+  if (this->probe_state_ == ProbeState::WAIT) {
+    // A matched reply means this burst was ours. Releasing the driver often leaves one
+    // 0xFF on RX before the slave answers; that discarded byte is not the other master.
+    if (!this->last_request_.valid && !this->collision_) {
+      this->probe_index_++;
+      this->probe_state_ = ProbeState::IDLE;
+    } else if (this->collision_ || this->discarded_bytes_ != this->discard_at_send_) {
+      this->abort_window_("collision");
+      return;
+    } else if (now - this->probe_sent_ms_ >= PROBE_TIMEOUT_MS) {
+      const Probe &p = this->probes_[this->probe_index_];
+      ESP_LOGW(TAG, "No reply from slave %u fc 0x%02X address %u (%u registers)", p.slave, p.function, p.start,
+               p.count);
+      this->last_request_.valid = false;
+      this->probe_index_++;
+      this->probe_state_ = ProbeState::IDLE;
+    } else {
+      return;
+    }
+  }
+
+  if (this->window_open_) {
+    const bool ran_out = now - this->window_start_ms_ + PROBE_TIMEOUT_MS >= this->active_window_ms_;
+    if (this->probe_index_ >= this->probes_.size() || ran_out) {
+      this->finish_window_();
+      return;
+    }
+    this->send_probe_();
+    return;
+  }
+
+  if (!this->armed_)
+    return;
+  if (now - this->last_foreign_ms_ < this->active_delay_ms_)
+    return;
+
+  this->window_open_ = true;
+  this->window_start_ms_ = now;
+  this->probe_index_ = 0;
+  this->collision_ = false;
+  ESP_LOGI(TAG, "Master quiet for %" PRIu32 " ms, reading %u ranges", this->active_delay_ms_,
+           (unsigned) this->probes_.size());
+  this->send_probe_();
+}
+
+void ModbusSniffer::send_probe_() {
+  const Probe &p = this->probes_[this->probe_index_];
+  uint8_t frame[8];
+  frame[0] = p.slave;
+  frame[1] = p.function;
+  frame[2] = p.start >> 8;
+  frame[3] = p.start & 0xFF;
+  frame[4] = p.count >> 8;
+  frame[5] = p.count & 0xFF;
+  const uint16_t crc = crc16(frame, 6);
+  frame[6] = crc & 0xFF;
+  frame[7] = crc >> 8;
+
+  this->last_request_.valid = true;
+  this->last_request_.slave = p.slave;
+  this->last_request_.function = p.function;
+  this->last_request_.read_start = p.start;
+  this->last_request_.read_count = p.count;
+  this->probe_state_ = ProbeState::WAIT;
+  this->probe_sent_ms_ = millis();
+  this->discard_at_send_ = this->discarded_bytes_;
+  this->collision_ = false;
+
+  ESP_LOGD(TAG, "Probe slave %u fc 0x%02X address %u count %u", p.slave, p.function, p.start, p.count);
+  this->write_array(frame, sizeof(frame));
+  this->flush();
+}
+
+void ModbusSniffer::finish_window_() {
+  ESP_LOGI(TAG, "Active reads finished, %u of %u ranges", (unsigned) this->probe_index_,
+           (unsigned) this->probes_.size());
+  this->window_open_ = false;
+  this->armed_ = false;
+  this->probe_state_ = ProbeState::IDLE;
+  this->last_request_.valid = false;
+}
+
+void ModbusSniffer::abort_window_(const char *reason) {
+  ESP_LOGW(TAG, "Active reads stopped: %s", reason);
+  this->window_open_ = false;
+  this->armed_ = true;
+  this->probe_state_ = ProbeState::IDLE;
+  if (!this->keep_foreign_request_)
+    this->last_request_.valid = false;
+  this->collision_ = false;
+  this->keep_foreign_request_ = false;
+  this->last_foreign_ms_ = millis();
 }
 
 }  // namespace modbus_sniffer

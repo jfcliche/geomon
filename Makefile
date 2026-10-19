@@ -35,7 +35,7 @@ compile: secrets.yaml ## Build the firmware
 syncserial: compile ## Build and flash over USB serial (PORT=...)
 	$(ESPHOME) upload $(CONFIG) --device "$(PORT)"
 
-synceth: compile ## Build and flash over Ethernet OTA (HOST=name-or-ip)
+upload: compile ## Build and flash over Ethernet OTA (HOST=name-or-ip)
 	$(ESPHOME) upload $(CONFIG) --device "$(HOST)"
 
 logs: ## Stream logs over the network (HOST=...)

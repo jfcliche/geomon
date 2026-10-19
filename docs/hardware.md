@@ -26,17 +26,14 @@ and the [ESPHome Ethernet component](https://esphome.io/components/ethernet/).
 
 | Signal | GPIO | Notes |
 | --- | --- | --- |
-| RXD (transceiver RO) | 21 | Data from the bus |
-| TXD (transceiver DI) | 17 | Configured, but the firmware never writes to it |
+| RXD (transceiver RO) | 17 | Data from the bus |
+| TXD (transceiver DI) | 21 | Idle high. Driven only during an active read |
+| DE (driver enable) | 16 | High only while a byte is leaving. /RE follows DE |
 
-The board has no RS485 transceiver of its own, so an external module is used.
-Because the sniffer is purely passive, the transceiver must stay in receive
-mode:
-
-- **Auto-direction modules** (the common ones with only RXD/TXD/VCC/GND) switch to
-  transmit only when TXD goes low. TXD idles high, so they stay in receive mode.
-- **Modules with DE/RE pins** (MAX485 style): tie DE and /RE to GND so the
-  driver is permanently disabled.
+The board has no RS485 transceiver of its own. Connect the module DE pin to
+GPIO16. The UART uses RS485 half-duplex and raises that pin only during a
+transmit. `rs485_txen_pin: "0"` leaves the pin undriven; tie DE to ground in
+that case so the driver cannot float on.
 
 ### Bus wiring
 

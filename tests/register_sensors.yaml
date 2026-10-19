@@ -5,8 +5,9 @@
 substitutions:
   name: geomon-test
   friendly_name: Geomon Test
-  rs485_rx_pin: GPIO21
-  rs485_tx_pin: GPIO17
+  rs485_rx_pin: GPIO17
+  rs485_tx_pin: GPIO21
+  rs485_txen_pin: "0"
   modbus_baud: "115200"
   modbus_parity: NONE
   modbus_stop_bits: "1"
