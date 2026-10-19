@@ -7,14 +7,24 @@
 #include "esphome/components/uart/uart.h"
 #include "esphome/core/component.h"
 
+// Passive Modbus RTU decoder with a short active-read window.
+//
+// Frames are recovered from idle-delimited bursts because the ESPHome loop
+// cannot see the 3.5-character gap. Sensors without an active flag publish
+// only what the other master already reads. Active sensors are read after
+// that master has been silent, and the driver-enable pin is raised only
+// while those bytes are leaving.
+
 namespace esphome {
 namespace modbus_sniffer {
 
+/** Modbus register space a sensor listens to. */
 enum class RegisterType : uint8_t { HOLDING, INPUT };
 
-// The _R variants store the low word first (word-swapped).
+/** Word layout of one sensor. The `_R` variants store the low word first. */
 enum class ValueType : uint8_t { U16, S16, U32, S32, U32_R, S32_R, FLOAT32, FLOAT32_R };
 
+/** One Home Assistant sensor bound to a Modbus register. */
 class RegisterSensor : public sensor::Sensor {
  public:
   void set_slave(uint8_t slave) { this->slave_ = slave; }
@@ -27,9 +37,10 @@ class RegisterSensor : public sensor::Sensor {
   RegisterType get_register_type() const { return this->register_type_; }
   uint16_t get_address() const { return this->address_; }
   bool is_active() const { return this->active_; }
+  /** Number of 16-bit registers this value occupies. */
   uint8_t word_count() const;
 
-  // Publishes the value if all of its registers lie within [start, start + count).
+  /** Publish when every register of this value lies in `[start, start + count)`. */
   void handle_registers(uint16_t start, const uint16_t *words, uint16_t count);
 
  protected:
@@ -40,6 +51,7 @@ class RegisterSensor : public sensor::Sensor {
   bool active_{false};
 };
 
+/** Sniffs a Modbus RTU UART and, for sensors marked active, reads them in the quiet gap. */
 class ModbusSniffer : public PollingComponent, public uart::UARTDevice {
  public:
   void setup() override;
@@ -50,8 +62,11 @@ class ModbusSniffer : public PollingComponent, public uart::UARTDevice {
 
   void set_log_frames(bool log_frames) { this->log_frames_ = log_frames; }
   void set_idle_timeout(uint32_t idle_timeout_ms) { this->idle_timeout_ms_ = idle_timeout_ms; }
+  /** Silence, in ms, required after the other master before an active read starts. */
   void set_active_delay(uint32_t delay_ms) { this->active_delay_ms_ = delay_ms; }
+  /** How long, in ms, active reads may hold the bus once they start. */
   void set_active_window(uint32_t window_ms) { this->active_window_ms_ = window_ms; }
+  /** True when a driver-enable pin is configured. Active reads need it. */
   void set_driver_enable(bool enabled) { this->driver_enable_ = enabled; }
   void set_frames_sensor(sensor::Sensor *s) { this->frames_sensor_ = s; }
   void set_discarded_bytes_sensor(sensor::Sensor *s) { this->discarded_bytes_sensor_ = s; }

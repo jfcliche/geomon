@@ -1,0 +1,5 @@
+libclang==14.*
+sphinx
+sphinx-rtd-theme
+myst-parser
+hawkmoth
