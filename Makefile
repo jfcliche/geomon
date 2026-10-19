@@ -1,17 +1,20 @@
 CONFIG  ?= geomon.yaml
-PORT    ?= /dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_A4:CB:8F:F8:9A:C8-if00
-HOST    ?= geomon.local
+PORT    ?=
+HOST    ?=
+DEVICE  := $(strip $(PORT) $(HOST))
 ESPHOME := uv run esphome
 
 .DEFAULT_GOAL := help
-.PHONY: help setup update config compile syncserial upload logs logsserial test docs clean
+.PHONY: help setup update config _build compile syncserial upload logs logsserial test docs clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
 	@echo ""
-	@echo "  Variables: PORT=$(PORT)"
-	@echo "             HOST=$(HOST)"
+	@echo "  PORT and HOST are interchangeable (serial path, hostname, or IP)."
+	@echo "    make compile PORT=<device>    or    make compile HOST=<device>"
+	@echo "    make logs PORT=<device>       or    make logs HOST=<device>"
+	@echo "  DEVICE=$(DEVICE)"
 
 setup: secrets.yaml ## Create/update the uv environment with ESPHome
 	uv sync
@@ -29,20 +32,25 @@ update: ## Upgrade ESPHome to the latest release
 config: secrets.yaml ## Validate the configuration
 	$(ESPHOME) config $(CONFIG)
 
-compile: secrets.yaml ## Build the firmware
+_build: secrets.yaml
 	$(ESPHOME) compile $(CONFIG)
 
-syncserial: compile ## Build and flash over USB serial (PORT=...)
-	$(ESPHOME) upload $(CONFIG) --device "$(PORT)"
+compile: _build ## Build the firmware. PORT= or HOST= also flashes that device
+ifneq ($(DEVICE),)
+	$(ESPHOME) upload $(CONFIG) $(foreach d,$(DEVICE),--device "$(d)")
+endif
 
-upload: compile ## Build and flash over Ethernet OTA (HOST=name-or-ip)
-	$(ESPHOME) upload $(CONFIG) --device "$(HOST)"
+syncserial: _build ## Build and flash over PORT or HOST
+	$(ESPHOME) upload $(CONFIG) $(foreach d,$(DEVICE),--device "$(d)")
 
-logs: ## Stream logs over the network (HOST=...)
-	$(ESPHOME) logs $(CONFIG) --device "$(HOST)"
+upload: _build ## Build and flash over PORT or HOST
+	$(ESPHOME) upload $(CONFIG) $(foreach d,$(DEVICE),--device "$(d)")
 
-logsserial: ## Stream logs over USB serial (PORT=...)
-	$(ESPHOME) logs $(CONFIG) --device "$(PORT)"
+logs: ## Stream logs over PORT or HOST
+	$(ESPHOME) logs $(CONFIG) $(foreach d,$(DEVICE),--device "$(d)")
+
+logsserial: ## Stream logs over PORT or HOST
+	$(ESPHOME) logs $(CONFIG) $(foreach d,$(DEVICE),--device "$(d)")
 
 test: ## Compile tests/register_sensors.yaml (every sniffer code path)
 	$(ESPHOME) compile tests/register_sensors.yaml
