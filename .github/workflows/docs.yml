@@ -19,13 +19,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v7
         with:
-          python-version: "3.12"
-      - name: Install Sphinx
-        run: pip install ./docs
+          enable-cache: true
+          prune-cache: true
+          cache-dependency-glob: |
+            docs/uv.lock
+            docs/pyproject.toml
       - name: Build HTML
-        run: sphinx-build -b html docs docs/_build/html
+        run: uv run --project docs --frozen sphinx-build -b html docs docs/_build/html
+        env:
+          UV_PYTHON_PREFERENCE: only-system
       - uses: actions/upload-pages-artifact@v3
         with:
           path: docs/_build/html

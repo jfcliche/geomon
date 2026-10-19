@@ -124,7 +124,7 @@ flooded.
 
 ## Mapping an unknown device
 
-1. Keep `log_frames: true` and run `make logs`.
+1. Keep `log_frames: true` and run `make logs HOST=...` (or `PORT=` for USB).
 2. Note which slaves, function codes and register ranges the master polls.
 3. Compare the values with what the device displays, then add sensors.
 4. Set `log_frames: false` once you are done; logging every frame is costly at

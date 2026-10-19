@@ -1,6 +1,6 @@
 # geomon
 
-[Documentation](https://jfcliche.github.io/geomon/)
+See [Online Documentation](https://jfcliche.github.io/geomon/)
 
 ESPHome firmware for a **Waveshare ESP32-S3-POE-ETH** that listens to a Modbus
 RTU bus on RS485 and publishes the values to Home Assistant over wired Ethernet
@@ -21,11 +21,11 @@ is the Allengra flow meter. Slave 3 is the electrical meter.
 Requirements: [uv](https://docs.astral.sh/uv/) and `make`.
 
 ```bash
-make setup        # create .venv with ESPHome, create secrets.yaml with a random API key
-make compile      # build the firmware
-make syncserial   # first flash, over the USB-C port
-make upload       # later updates, over Ethernet (OTA). HOST=name-or-ip
-make logs         # stream logs over the network. HOST=name-or-ip
+make setup                              # create .venv with ESPHome, create secrets.yaml with a random API key
+make compile                            # build the firmware
+make upload PORT=/dev/ttyACM0           # flash over USB. HOST= works the same way
+make upload HOST=10.0.7.104             # flash over Ethernet (OTA)
+make logs HOST=10.0.7.104               # stream logs. PORT= for the USB port
 ```
 
 Edit `ota_password` in `secrets.yaml` before the first flash. Run `make` with no
@@ -38,12 +38,14 @@ want the web page, TCP 80.
 
 ## Configuration
 
-| What | Where |
-| --- | --- |
-| Bus speed, parity, stop bits, RS485 pins | `substitutions` in [`geomon.yaml`](geomon.yaml) |
-| Registers published to Home Assistant | [`common/modbus_sniffer.yaml`](common/modbus_sniffer.yaml) |
-| Ethernet (DHCP or static IP) | [`common/board_esp32s3_poe_eth.yaml`](common/board_esp32s3_poe_eth.yaml) |
-| API, OTA, logger, diagnostics | [`common/base.yaml`](common/base.yaml) |
+
+| What                                     | Where                                                                    |
+| ---------------------------------------- | ------------------------------------------------------------------------ |
+| Bus speed, parity, stop bits, RS485 pins | `substitutions` in `[geomon.yaml](geomon.yaml)`                          |
+| Registers published to Home Assistant    | `[common/modbus_sniffer.yaml](common/modbus_sniffer.yaml)`               |
+| Ethernet (DHCP or static IP)             | `[common/board_esp32s3_poe_eth.yaml](common/board_esp32s3_poe_eth.yaml)` |
+| API, OTA, logger, diagnostics            | `[common/base.yaml](common/base.yaml)`                                   |
+
 
 `rs485_txen_pin: "0"` leaves the driver disabled (receive only). `GPIO16` is
 the DE pin of the current module. If `Modbus Frames` stays at 0 while
@@ -61,6 +63,8 @@ pyproject.toml, uv.lock     pinned ESPHome version, managed by uv
 Makefile                    build / flash / log shortcuts
 ```
 
+
+
 ## Documentation
 
 The same pages are published to GitHub Pages from `main`.
@@ -69,3 +73,4 @@ The same pages are published to GitHub Pages from `main`.
 - [docs/modbus_sniffer.md](docs/modbus_sniffer.md): framing, active reads, and how to add registers
 - [docs/heat_pump_cop.md](docs/heat_pump_cop.md): meter registers, units, and COP
 - [docs/development.md](docs/development.md): toolchain, flashing and troubleshooting
+

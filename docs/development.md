@@ -13,25 +13,27 @@ Build output goes to `.esphome/` (ignored by git).
 | `make update` | upgrade ESPHome (`uv lock --upgrade && uv sync`) |
 | `make config` | validate `geomon.yaml` |
 | `make compile` | build the firmware |
-| `make syncserial` | build and flash over USB (`PORT=...`) |
-| `make upload` | build and flash over Ethernet OTA (`HOST=...`) |
-| `make logs` / `make logsserial` | stream logs over the network / USB |
+| `make upload` | build and flash. `PORT=` or `HOST=` is the device |
+| `make logs` | stream logs. `PORT=` or `HOST=` is the device |
 | `make test` | compile `tests/register_sensors.yaml`, which covers every sensor value type |
 | `make docs` | build the Sphinx site into `docs/_build/html` |
 | `make clean` | remove build artifacts |
 
 ## Flashing
 
+`PORT` and `HOST` are interchangeable. Each defaults to empty, and `make`
+joins whichever you set into `DEVICE`. Pass a serial path as `PORT` and a
+hostname or IP as `HOST`.
+
 ### First time: USB
 
-`PORT` defaults to the stable by-id path of the development board:
-
-```
-/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_A4:CB:8F:F8:9A:C8-if00
+```bash
+make upload PORT=/dev/ttyACM0
 ```
 
-For another board, use `make syncserial PORT=/dev/ttyACM0` (or its own
-by-id path). Close minicom or any other program holding the port first.
+The development board's stable path is
+`/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_A4:CB:8F:F8:9A:C8-if00`.
+Close minicom or any other program holding the port first.
 
 If the upload cannot connect, hold **BOOT**, press **RESET**, release **BOOT**,
 then retry.
@@ -39,7 +41,7 @@ then retry.
 ### Afterwards: Ethernet
 
 ```bash
-make upload                      # uses geomon.local (mDNS, same subnet only)
+make upload HOST=geomon.local    # mDNS, same subnet only
 make upload HOST=10.0.7.104      # or the IP address directly
 ```
 
@@ -49,9 +51,15 @@ resolve across subnets.
 
 ## Logs
 
-- `make logs` connects through the native API over Ethernet.
-- `make logsserial` (or `minicom -D <PORT>`) reads the USB-Serial/JTAG port.
-  The baud setting does not matter on this virtual USB port.
+`make logs` uses the same `PORT` or `HOST` value.
+
+```bash
+make logs HOST=10.0.7.104        # native API over Ethernet
+make logs PORT=/dev/ttyACM0      # USB-Serial/JTAG
+```
+
+The baud setting does not matter on this virtual USB port. `minicom -D` on
+the same path works too.
 
 ## Secrets
 
@@ -74,7 +82,7 @@ resolve across subnets.
   never reach the bus. Set the pin or tie DE to ground and drop the active
   sensors.
 - **Ethernet does not come up**: check the cable and the link LEDs, then
-  `make logsserial`.
+  `make logs PORT=/dev/ttyACM0`.
 
 ## Documentation site
 
