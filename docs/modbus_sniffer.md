@@ -1,7 +1,8 @@
 # Modbus sniffer component
 
-`components/modbus_sniffer` is a custom ESPHome external component that decodes
-Modbus RTU traffic it receives on a UART, without ever transmitting.
+`components/modbus_sniffer` is a custom ESPHome external component. It decodes
+Modbus RTU traffic on a UART and can also read registers the other master
+skips, during a short quiet window.
 
 ## How frames are found
 
@@ -22,8 +23,8 @@ Instead, the sniffer delimits frames by their structure:
    try again. This resynchronises after noise or a start in the middle of a
    frame.
 
-If no new bytes arrive for `idle_timeout` (50 ms by default), any incomplete
-leftovers are discarded.
+If no new bytes arrive for `idle_timeout` (50 ms by default), the burst is
+parsed. Bytes that still do not form a frame are discarded.
 
 ## Request/response pairing
 
@@ -48,6 +49,9 @@ counted, but their values are not published.
 modbus_sniffer:
   id: sniffer
   uart_id: rs485
+  flow_control_pin: GPIO16  # DE. Omit, or pass 0, to stay receive-only
+  active_delay: 5s          # silence after the other master before we read
+  active_window: 30s        # longest we hold the bus after that
   log_frames: true          # hex dump of each idle burst, plus decoded frames
   idle_timeout: 50ms
   update_interval: 30s      # how often the counters below are published
@@ -60,6 +64,24 @@ modbus_sniffer:
   exceptions:
     name: Modbus Exceptions
 ```
+
+`flow_control_pin` selects ESP-IDF RS485 half-duplex. The pin goes high only
+while a byte is shifted out. Releasing the driver often leaves a single `0xFF`
+on RX ahead of the slave's reply. That byte is discarded and is not treated as
+another master when the reply itself matches the request we sent.
+
+## Active reads
+
+Sensors with `active: true` are collected at startup and merged into the
+fewest reads that still cover them. Two sensors on the same slave and register
+type are one request when at most one unused register sits between them.
+Holding registers use function 0x03. Input registers use function 0x04.
+
+The window opens once the bus has been silent for `active_delay`. It closes
+when every range has been read, when `active_window` expires, or when a frame
+that is not our own reply arrives. Closing because the other master resumed
+waits for another full silence before trying again. A matched reply is kept
+even if the turnaround `0xFF` was discarded in front of it.
 
 ### Register sensors
 

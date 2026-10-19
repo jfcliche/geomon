@@ -4,7 +4,7 @@ HOST    ?= geomon.local
 ESPHOME := uv run esphome
 
 .DEFAULT_GOAL := help
-.PHONY: help setup update config compile syncserial synceth logs logsserial test clean
+.PHONY: help setup update config compile syncserial upload logs logsserial test docs clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -47,6 +47,10 @@ logsserial: ## Stream logs over USB serial (PORT=...)
 test: ## Compile tests/register_sensors.yaml (every sniffer code path)
 	$(ESPHOME) compile tests/register_sensors.yaml
 
+docs: ## Build the Sphinx HTML documentation into docs/_build/html
+	uv run --project docs sphinx-build -b html docs docs/_build/html
+
 clean: ## Remove build artifacts
 	$(ESPHOME) clean $(CONFIG)
 	$(ESPHOME) clean tests/register_sensors.yaml
+	rm -rf docs/_build

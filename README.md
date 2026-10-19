@@ -1,12 +1,18 @@
 # geomon
 
-ESPHome firmware for a **Waveshare ESP32-S3-POE-ETH** that passively listens to a
-Modbus RTU bus on RS485 and publishes the values it sees to Home Assistant over
-wired Ethernet (W5500, optionally powered by PoE). Wi-Fi is not used.
+ESPHome firmware for a **Waveshare ESP32-S3-POE-ETH** that listens to a Modbus
+RTU bus on RS485 and publishes the values to Home Assistant over wired Ethernet
+(W5500, optionally powered by PoE). Wi-Fi is not used.
 
-The device never transmits on the bus. It reconstructs request/response pairs
-exchanged between the existing Modbus master and its slaves, and exposes the
-registers you choose as Home Assistant sensors.
+Most sensors are passive: the firmware reconstructs request/response pairs
+between the existing Modbus master and its slaves, and never answers those
+frames. Sensors marked `active: true` are read by geomon itself, starting 5 s
+after the other master goes silent and stopping within 30 s so that master has
+the bus back before its next sweep (about once a minute). The driver-enable
+pin is raised only while those bytes are leaving.
+
+The heat pump bus is 19200 baud, 8 data bits, no parity, 1 stop bit. Slave 1
+is the Allengra flow meter. Slave 3 is the electrical meter.
 
 ## Quick start
 
@@ -16,15 +22,17 @@ Requirements: [uv](https://docs.astral.sh/uv/) and `make`.
 make setup        # create .venv with ESPHome, create secrets.yaml with a random API key
 make compile      # build the firmware
 make syncserial   # first flash, over the USB-C port
-make synceth      # later updates, over Ethernet (OTA)
-make logs         # stream logs over the network
+make upload       # later updates, over Ethernet (OTA). HOST=name-or-ip
+make logs         # stream logs over the network. HOST=name-or-ip
 ```
 
 Edit `ota_password` in `secrets.yaml` before the first flash. Run `make` with no
 arguments for the full list of targets.
 
-The device appears in Home Assistant as **Geomon** (ESPHome integration,
-auto-discovered). Use the `api_encryption_key` from `secrets.yaml` when adding it.
+The device appears in Home Assistant as **Geomon** (ESPHome integration).
+mDNS (`geomon.local`) does not cross subnets, so from another subnet use the
+IP address and forward TCP 6053 (API and logs), TCP 3232 (OTA) and, if you
+want the web page, TCP 80.
 
 ## Configuration
 
@@ -35,24 +43,27 @@ auto-discovered). Use the `api_encryption_key` from `secrets.yaml` when adding i
 | Ethernet (DHCP or static IP) | [`common/board_esp32s3_poe_eth.yaml`](common/board_esp32s3_poe_eth.yaml) |
 | API, OTA, logger, diagnostics | [`common/base.yaml`](common/base.yaml) |
 
-The bus defaults to 115200 baud 8N1, which is a guess. If the `Modbus Frames`
-counter stays at 0 while `Modbus Discarded Bytes` keeps climbing, the speed or
-parity is wrong.
+`rs485_txen_pin: "0"` leaves the driver disabled (receive only). `GPIO16` is
+the DE pin of the current module. If `Modbus Frames` stays at 0 while
+`Modbus Discarded Bytes` climbs, the speed, parity, or A/B polarity is wrong.
 
 ## Repository layout
 
 ```
-geomon.yaml              main device configuration
-common/                  configuration packages included by geomon.yaml
-components/modbus_sniffer/  custom ESPHome component (passive Modbus RTU decoder)
-tests/                   build test exercising every sensor value type
-docs/                    hardware, sniffer and development notes
-pyproject.toml, uv.lock  pinned ESPHome version, managed by uv
-Makefile                 build / flash / log shortcuts
+geomon.yaml                 main device configuration
+common/                     configuration packages included by geomon.yaml
+components/modbus_sniffer/  custom ESPHome component
+tests/                      build test exercising every sensor value type
+docs/                       Sphinx site (hardware, sniffer, COP, API)
+pyproject.toml, uv.lock     pinned ESPHome version, managed by uv
+Makefile                    build / flash / log shortcuts
 ```
 
 ## Documentation
 
+The same pages are published to GitHub Pages from `main`.
+
 - [docs/hardware.md](docs/hardware.md): board, pinout and RS485 wiring
-- [docs/modbus_sniffer.md](docs/modbus_sniffer.md): how the sniffer works and how to add registers
+- [docs/modbus_sniffer.md](docs/modbus_sniffer.md): framing, active reads, and how to add registers
+- [docs/heat_pump_cop.md](docs/heat_pump_cop.md): meter registers, units, and COP
 - [docs/development.md](docs/development.md): toolchain, flashing and troubleshooting

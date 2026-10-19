@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "geomon-docs"
+version = "0.1.0"
+description = "Sphinx documentation builder for geomon"
+requires-python = ">=3.10"
+dependencies = [
+    "libclang==14.*",
+    "sphinx",
+    "sphinx-rtd-theme",
+    "myst-parser",
+    "hawkmoth",
+]
+
+[tool.setuptools]
+packages = []

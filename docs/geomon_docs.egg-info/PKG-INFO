@@ -1,0 +1,10 @@
+Metadata-Version: 2.4
+Name: geomon-docs
+Version: 0.1.0
+Summary: Sphinx documentation builder for geomon
+Requires-Python: >=3.10
+Requires-Dist: libclang==14.*
+Requires-Dist: sphinx
+Requires-Dist: sphinx-rtd-theme
+Requires-Dist: myst-parser
+Requires-Dist: hawkmoth
